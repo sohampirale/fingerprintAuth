@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Fingerprint Dem</title>
+  <style>
+    /* Global reset and base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #4a90e2 0%, #9013fe 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    input[type="text"] {
+      width: 100%;
+      max-width: 320px;
+      padding: 0.75rem 1rem;
+      border: none;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      outline: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus {
+      transform: scale(1.02);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    button {
+      padding: 0.75rem 1.5rem;
+      margin: 0.5rem 0;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.2s;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      width: 100%;
+      max-width: 320px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+    }
+
+    button:active {
+      transform: translateY(0);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    button:nth-of-type(1) {
+      background: #ffffff33;
+      color: #fff;
+    }
+
+    button:nth-of-type(1):hover {
+      background: #ffffff44;
+    }
+
+    button:nth-of-type(2) {
+      background: #fff;
+      color: #4a90e2;
+    }
+
+    button:nth-of-type(2):hover {
+      background: #f0f0f0;
+    }
+
+    /* Responsive tweaks */
+    @media (max-width: 480px) {
+      h1 {
+        font-size: 2rem;
+      }
+
+      input[type="text"],
+      button {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🔐 WebAuthn Fingerprint Dem</h1>
+  <input type="text" id="username" placeholder="Enter username" />
+  <br><br>
+  <button onclick="register()">Add Fingerprint (Register)</button>
+  <br><br>
+  <button onclick="login()">Login with Fingerprint</button>
+
+  <script>
+    const URL=""
+    function base64urlToArrayBuffer(base64url) {
+      // Replace URL-safe chars and pad with '='
+      const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
+        + '='.repeat((4 - base64url.length % 4) % 4);
+      const str = atob(base64);
+      const bytes = new Uint8Array(str.length);
+      for (let i = 0; i < str.length; i++) {
+        bytes[i] = str.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    async function register() {
+      const username = document.getElementById("username").value;
+      if (!username) {
+        return;
+      }
+
+      const publicKey = {
+        challenge: new Uint8Array(32),
+        rp: { name: "Fingerprint Demo" },
+        user: {
+          id: Uint8Array.from(username, c => c.charCodeAt(0)),
+          name: username,
+          displayName: username
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: {
+          authenticatorAttachment: "platform",
+          userVerification: "required"
+        },
+        timeout: 60000,
+        attestation: "none"
+      };
+
+      try {
+        const credential = await navigator.credentials.create({ publicKey });
+
+        const registrationData = {
+          id: credential.id,
+          rawId: credential.rawId,
+          response: credential.response,
+        };
+
+        await fetch("https://fluffy-sniffle-4jqw94q5555xf7957-3000.app.github.dev/api/storeFingerprint", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential, username })
+        });
+
+        localStorage.setItem('userCredential', JSON.stringify(registrationData));
+        alert("✅ Fingerprint Registered!");
+      } catch (err) {
+        alert("❌ Registration failed");
+      }
+    }
+
+    async function login() {
+      const storedCredential = JSON.parse(localStorage.getItem('userCredential'));
+      const username = document.getElementById("username").value;
+
+      if (!storedCredential) {
+        alert("❌ No credentials found. Please register first!");
+        return;
+      }
+
+      const response = await fetch("https://fluffy-sniffle-4jqw94q5555xf7957-3000.app.github.dev/api/giveChallenge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ username })
+      });
+
+      const data = await response.json();
+
+      if (response.status !== 200) {
+        alert("Failed to get challenge from backend");
+        return;
+      }
+
+      const challenge = new Uint8Array(data.challenge);
+
+      const publicKey = {
+        challenge: challenge,
+        allowCredentials: [
+          {
+            id: base64urlToArrayBuffer(storedCredential.id),
+            type: "public-key"
+          }
+        ],
+        userVerification: data.userVerification,
+        timeout: 60000
+      };
+
+      try {
+        const assertion = await navigator.credentials.get({ publicKey });
+
+        const verifyResponse = await fetch("https://fluffy-sniffle-4jqw94q5555xf7957-3000.app.github.dev/api/verifyFingerprint", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            challenge: data.challenge,
+            assertion
+          })
+        });
+
+        const verifyData = await verifyResponse.json();
+
+        if (verifyResponse.status === 200) {
+          alert("✅ Login Successful!");
+        } else {
+          alert("❌ Login Failed: " + verifyData.msg);
+        }
+
+      } catch (err) {
+        alert("❌ Login failed: " + err);
+      }
+    }
+
+  </script>
+</body>
+
+</html>
